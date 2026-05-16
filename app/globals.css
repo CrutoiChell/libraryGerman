@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body {
+    @apply bg-bg text-white min-h-full;
+  }
+}
+
+@layer components {
+  /* Glassmorphism utility: semi-transparent background, backdrop blur, subtle border */
+  .glass {
+    @apply bg-white/5 backdrop-blur-glass border border-white/10;
+  }
+}
