@@ -38,12 +38,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const initialSearch = searchParams.q ?? ''
   const initialGenre = searchParams.genre ?? ''
 
-  // Server-side auto-seed: on a freshly provisioned database the
-  // `books` table is empty and the home page would render a sparse
-  // empty-state. We populate it once per Node process from the
-  // public Open Library API. The call swallows its own errors so
-  // even an unreachable network leaves the page renderable.
-  await autoSeedIfEmpty()
+  // Optional public auto-seed (disabled by default). Admins can
+  // populate the catalog from the admin panel without exposing
+  // service-role writes to every visitor.
+  if (process.env.ENABLE_PUBLIC_AUTO_SEED === 'true') {
+    await autoSeedIfEmpty()
+  }
 
   const [initialBooks, initialGenres] = await Promise.all([
     listBooks(supabase, {

@@ -22,7 +22,11 @@ import { z } from 'zod'
  * - `.regex(/^https?:\/\//)` restricts the protocol to http or https,
  *   matching the Postgres CHECK constraint and Requirement 14.
  */
-const urlSchema = z.string().trim().url().regex(/^https?:\/\//)
+const urlSchema = z
+  .string()
+  .trim()
+  .url({ message: 'Укажите корректный URL' })
+  .regex(/^https?:\/\//, { message: 'URL должен начинаться с http:// или https://' })
 
 /**
  * Validation schema for `BookInput` payloads accepted by the admin
@@ -36,10 +40,25 @@ const urlSchema = z.string().trim().url().regex(/^https?:\/\//)
  *   capped at 5000 characters.
  */
 export const BookInputSchema = z.object({
-  title: z.string().trim().min(1).max(300),
-  author: z.string().trim().min(1).max(200),
-  description: z.string().max(5000).default(''),
-  genre: z.string().trim().min(1).max(100),
+  title: z
+    .string()
+    .trim()
+    .min(1, { message: 'Укажите название' })
+    .max(300, { message: 'Название слишком длинное' }),
+  author: z
+    .string()
+    .trim()
+    .min(1, { message: 'Укажите автора' })
+    .max(200, { message: 'Имя автора слишком длинное' }),
+  description: z
+    .string()
+    .max(5000, { message: 'Описание слишком длинное' })
+    .default(''),
+  genre: z
+    .string()
+    .trim()
+    .min(1, { message: 'Укажите жанр' })
+    .max(100, { message: 'Название жанра слишком длинное' }),
   cover_url: urlSchema,
   external_link: urlSchema,
 })

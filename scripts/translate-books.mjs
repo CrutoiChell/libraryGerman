@@ -1,24 +1,9 @@
 /**
- * One-shot script: translate every book description in
- * `public.books` from English to Russian using the public MyMemory
- * translation API.
- *
- * Used to localise an existing English-language catalog without
- * having to clear and re-seed from scratch. Cyrillic-heavy rows
- * are skipped (so re-running this script is a no-op once the
- * catalog has been translated).
- *
- * Reads NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY from
- * `.env.local`. Without confirmation (`--yes` or `CONFIRM=1`) the
- * script prints a warning and exits 0 without touching the database.
+ * One-shot script: translate book title, author, and description in
+ * `public.books` from English to Russian (MyMemory API).
  *
  *   node scripts/translate-books.mjs --yes
  *   CONFIRM=1 node scripts/translate-books.mjs
- *
- * Exit codes:
- *   0  - confirmation refused, or run completed (even with per-row
- *        failures — the loop reports those individually).
- *   1  - systemic failure (env missing, table read failed, etc.).
  */
 
 import { readFileSync } from 'node:fs'
@@ -45,13 +30,8 @@ const confirmed =
 
 if (!confirmed) {
   console.warn(
-    'WARNING: this script will UPDATE every row in public.books and',
+    'WARNING: this script will UPDATE rows in public.books (title, author, description).',
   )
-  console.warn(
-    '         replace the description with a Russian translation',
-  )
-  console.warn('         fetched from the MyMemory public API.')
-  console.warn('')
   console.warn('Re-run with `--yes` or `CONFIRM=1` to confirm.')
   process.exit(0)
 }
@@ -69,23 +49,18 @@ const admin = createClient(url, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
-// Same length thresholds as `lib/db/auto-seed.ts`. Re-stated here
-// because the script is plain ESM and cannot import the .ts module.
 const TRANSLATE_CHUNK_MAX_LENGTH = 480
 const TRANSLATE_MIN_LENGTH = 10
 const DESCRIPTION_MAX_LENGTH = 5000
-const SLEEP_BETWEEN_ROWS_MS = 150
-const SLEEP_BETWEEN_CHUNKS_MS = 100
+const TITLE_MAX_LENGTH = 300
+const AUTHOR_MAX_LENGTH = 200
+const SLEEP_BETWEEN_ROWS_MS = 200
+const SLEEP_BETWEEN_CALLS_MS = 100
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/**
- * Heuristic: returns true when more than half of the alphabetic
- * characters in `text` are already Cyrillic. Used to skip rows
- * that have already been translated.
- */
 function isMostlyCyrillic(text) {
   const cyrillic = (text.match(/[\u0400-\u04FF]/g) ?? []).length
   const allLetters = (text.match(/[A-Za-z\u0400-\u04FF]/g) ?? []).length
@@ -95,15 +70,12 @@ function isMostlyCyrillic(text) {
 
 async function translateChunk(text) {
   try {
-    const url =
-      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|ru`
-    const res = await fetch(url)
+    const apiUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|ru`
+    const res = await fetch(apiUrl)
     if (!res.ok) return text
     const json = await res.json()
     const translated = json?.responseData?.translatedText
-    if (typeof translated !== 'string' || translated.length === 0) {
-      return text
-    }
+    if (typeof translated !== 'string' || translated.length === 0) return text
     const upper = translated.toUpperCase()
     if (
       upper.startsWith('PLEASE SELECT') ||
@@ -119,9 +91,8 @@ async function translateChunk(text) {
 
 async function translateToRussian(text) {
   const input = text.trim()
-  if (input.length === 0 || input.length < TRANSLATE_MIN_LENGTH) {
-    return text
-  }
+  if (input.length === 0 || input.length < TRANSLATE_MIN_LENGTH) return text
+  if (isMostlyCyrillic(input)) return text
 
   if (input.length <= TRANSLATE_CHUNK_MAX_LENGTH) {
     return await translateChunk(input)
@@ -152,15 +123,22 @@ async function translateToRussian(text) {
 
   const translated = []
   for (let i = 0; i < chunks.length; i += 1) {
-    if (i > 0) await sleep(SLEEP_BETWEEN_CHUNKS_MS)
+    if (i > 0) await sleep(SLEEP_BETWEEN_CALLS_MS)
     translated.push(await translateChunk(chunks[i]))
   }
   return translated.join(' ')
 }
 
+async function localizeField(value, maxLen) {
+  if (!value || value.trim().length === 0) return value
+  if (isMostlyCyrillic(value)) return value
+  const next = await translateToRussian(value)
+  return next.length > maxLen ? next.slice(0, maxLen) : next
+}
+
 const fetchResult = await admin
   .from('books')
-  .select('id, title, description')
+  .select('id, title, author, description')
 
 if (fetchResult.error) {
   console.error('failed to read books:', fetchResult.error.message)
@@ -170,70 +148,90 @@ if (fetchResult.error) {
 const rows = fetchResult.data ?? []
 console.log(`Loaded ${rows.length} book row(s).`)
 
-let translated = 0
+let updated = 0
 let skipped = 0
 let failed = 0
 
 for (let i = 0; i < rows.length; i += 1) {
   const row = rows[i]
-  const description = typeof row.description === 'string' ? row.description : ''
+  const title = typeof row.title === 'string' ? row.title : ''
+  const author = typeof row.author === 'string' ? row.author : ''
+  const description =
+    typeof row.description === 'string' ? row.description : ''
 
-  if (description.trim().length === 0) {
-    skipped += 1
-    console.log(`Skipped (empty): ${row.title}`)
-    continue
-  }
+  const needsWork =
+    (title && !isMostlyCyrillic(title)) ||
+    (author && !isMostlyCyrillic(author)) ||
+    (description && !isMostlyCyrillic(description))
 
-  if (isMostlyCyrillic(description)) {
+  if (!needsWork) {
     skipped += 1
-    console.log(`Skipped (already Cyrillic): ${row.title}`)
+    console.log(`Skipped (already Russian): ${title}`)
     continue
   }
 
   if (i > 0) await sleep(SLEEP_BETWEEN_ROWS_MS)
 
-  let next
   try {
-    next = await translateToRussian(description)
+    let nextTitle = title
+    let nextAuthor = author
+    let nextDescription = description
+
+    if (title && !isMostlyCyrillic(title)) {
+      nextTitle = await localizeField(title, TITLE_MAX_LENGTH)
+      await sleep(SLEEP_BETWEEN_CALLS_MS)
+    }
+    if (author && !isMostlyCyrillic(author)) {
+      nextAuthor = await localizeField(author, AUTHOR_MAX_LENGTH)
+      await sleep(SLEEP_BETWEEN_CALLS_MS)
+    }
+    if (description && !isMostlyCyrillic(description)) {
+      nextDescription = await localizeField(
+        description,
+        DESCRIPTION_MAX_LENGTH,
+      )
+    }
+
+    if (
+      nextTitle === title &&
+      nextAuthor === author &&
+      nextDescription === description
+    ) {
+      failed += 1
+      console.log(`Failed (no change): ${title}`)
+      continue
+    }
+
+    const update = await admin
+      .from('books')
+      .update({
+        title: nextTitle,
+        author: nextAuthor,
+        description: nextDescription,
+      })
+      .eq('id', row.id)
+
+    if (update.error) {
+      failed += 1
+      console.log(`Failed (db): ${title}`)
+      console.error(update.error.message)
+      continue
+    }
+
+    updated += 1
+    console.log(`Translated: ${nextTitle}`)
   } catch (err) {
     failed += 1
-    console.log(`Failed (translate threw): ${row.title}`)
+    console.log(`Failed (error): ${title}`)
     console.error(err)
-    continue
   }
-
-  if (next === description) {
-    failed += 1
-    console.log(`Failed (no change returned): ${row.title}`)
-    continue
-  }
-
-  const capped =
-    next.length > DESCRIPTION_MAX_LENGTH
-      ? next.slice(0, DESCRIPTION_MAX_LENGTH)
-      : next
-
-  const update = await admin
-    .from('books')
-    .update({ description: capped })
-    .eq('id', row.id)
-
-  if (update.error) {
-    failed += 1
-    console.log(`Failed (db update): ${row.title}`)
-    console.error(update.error.message)
-    continue
-  }
-
-  translated += 1
-  console.log(`Translated: ${row.title}`)
 }
 
 console.log('')
 console.log('Summary:')
-console.log(`  Translated: ${translated}`)
-console.log(`  Skipped:    ${skipped}`)
-console.log(`  Failed:     ${failed}`)
-console.log(`  Total:      ${rows.length}`)
+console.log(`  Updated:  ${updated}`)
+console.log(`  Skipped:  ${skipped}`)
+console.log(`  Failed:   ${failed}`)
+console.log(`  Total:    ${rows.length}`)
 
 process.exit(0)

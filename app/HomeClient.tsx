@@ -81,7 +81,7 @@ export function HomeClient({
           <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
             Найдите свою следующую книгу в
             {' '}
-            <span className="text-accent">LibraryCatalog</span>
+            <span className="text-accent">каталоге библиотеки</span>
           </h1>
           <p className="mx-auto max-w-xl text-sm text-white/70 sm:text-base">
             Кураторская подборка в тёмном премиальном стиле. Ищите по

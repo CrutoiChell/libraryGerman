@@ -129,7 +129,7 @@ export async function NavBar() {
         <Link
           href="/"
           className="group inline-flex items-center gap-2 text-lg font-semibold tracking-tight text-white transition-transform duration-200 ease-out hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm"
-          aria-label="LibraryCatalog — главная"
+          aria-label="Каталог библиотеки — главная"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -147,7 +147,9 @@ export async function NavBar() {
             <path d="M9 7h7" />
           </svg>
           <span>
-            <span className="text-accent">Library</span>Catalog
+            <span className="text-accent">Каталог</span>
+            {' '}
+            библиотеки
           </span>
         </Link>
 

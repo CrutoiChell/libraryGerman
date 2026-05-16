@@ -213,7 +213,7 @@ export default function SignupPage() {
             htmlFor="signup-email"
             className="text-sm font-medium text-white/80"
           >
-            Email
+            Эл. почта
           </label>
           <input
             id="signup-email"
@@ -223,7 +223,7 @@ export default function SignupPage() {
             onChange={(event) => setEmail(event.target.value)}
             aria-invalid={Boolean(errors.email)}
             aria-describedby={errors.email ? 'signup-email-error' : undefined}
-            placeholder="you@example.com"
+            placeholder="вы@example.com"
             className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
           {errors.email ? (

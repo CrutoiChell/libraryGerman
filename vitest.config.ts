@@ -23,6 +23,7 @@ export default defineConfig({
     ],
     // Exclude Playwright E2E suites; they run via `npm run test:e2e`.
     exclude: ['node_modules/**', '.next/**', 'tests/e2e/**'],
+    passWithNoTests: true,
     css: false,
   },
 });

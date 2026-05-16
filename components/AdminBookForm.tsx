@@ -260,15 +260,35 @@ export function AdminBookForm({ mode, initialValues }: AdminBookFormProps) {
         showTitleNotice('В Open Library нет совпадений по этому названию.')
         return
       }
+
+      let title = doc.title?.trim() ?? trimmedTitle
+      let author =
+        doc.author_name && doc.author_name.length > 0
+          ? doc.author_name.join(', ')
+          : ''
+      let description = doc.first_sentence?.[0]?.trim() ?? ''
+
+      try {
+        const translateRes = await fetch('/api/admin/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texts: [title, author, description] }),
+        })
+        if (translateRes.ok) {
+          const translated = (await translateRes.json()) as { texts?: string[] }
+          const [tTitle, tAuthor, tDesc] = translated.texts ?? []
+          if (typeof tTitle === 'string' && tTitle.length > 0) title = tTitle
+          if (typeof tAuthor === 'string' && tAuthor.length > 0) author = tAuthor
+          if (typeof tDesc === 'string' && tDesc.length > 0) description = tDesc
+        }
+      } catch {
+        // Keep English copy when translation is unavailable.
+      }
+
       setValues((prev) => {
-        const next = { ...prev }
-        if (doc.author_name && doc.author_name.length > 0) {
-          next.author = doc.author_name.join(', ')
-        }
-        const firstSentence = doc.first_sentence?.[0]
-        if (typeof firstSentence === 'string' && firstSentence.length > 0) {
-          next.description = firstSentence
-        }
+        const next = { ...prev, title }
+        if (author.length > 0) next.author = author
+        if (description.length > 0) next.description = description
         if (typeof doc.cover_i === 'number') {
           next.cover_url = `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`
         }

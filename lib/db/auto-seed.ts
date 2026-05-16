@@ -36,6 +36,11 @@
  *  9. Take the first `targetCount` survivors and insert them.
  */
 
+import {
+  DESCRIPTION_MAX_LENGTH,
+  sleep,
+  translateBookFields,
+} from '@/lib/translate'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -126,141 +131,10 @@ const MAX_CANDIDATES = 100
 const AUTO_SEED_TARGET = 100
 
 /**
- * Maximum length of the `description` column accepted by
- * `BookInputSchema`. Open Library descriptions are usually short
- * but occasionally include a full afterword; cap so we can't
- * blow the Zod limit at insert time.
+ * Cap on books fully localized (title + author + description) per
+ * seed pass. Each book may use up to three MyMemory calls.
  */
-const DESCRIPTION_MAX_LENGTH = 5000
-
-/**
- * MyMemory imposes a per-call length cap. We split anything longer
- * on sentence boundaries before translating, so each chunk stays
- * under this size.
- */
-const TRANSLATE_CHUNK_MAX_LENGTH = 480
-
-/**
- * Texts shorter than this are usually fragments (a half-title, a
- * stray phrase) and the API returns noise for them. Skip
- * translation entirely so we don't burn requests on garbage.
- */
-const TRANSLATE_MIN_LENGTH = 10
-
-/**
- * Cap on the number of descriptions translated per seed pass.
- * Keeps MyMemory usage bounded even when seeding the full catalog.
- */
-const TRANSLATE_MAX_PER_PASS = 80
-
-/** Helper that resolves after `ms` milliseconds. */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-/**
- * Best-effort translation of a single chunk via MyMemory.
- *
- * Returns the original chunk on any failure — network errors,
- * non-OK responses, malformed payloads, or the API's known
- * sentinel error strings ("PLEASE SELECT...", "MYMEMORY
- * WARNING..."). The seed must never block on translation, so we
- * always degrade gracefully.
- */
-async function translateChunk(text: string): Promise<string> {
-  try {
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(
-      text,
-    )}&langpair=en|ru`
-    const res = await fetch(url)
-    if (!res.ok) return text
-    const json = (await res.json()) as {
-      responseData?: { translatedText?: string }
-    }
-    const translated = json.responseData?.translatedText
-    if (typeof translated !== 'string' || translated.length === 0) {
-      return text
-    }
-    // MyMemory occasionally surfaces operator messages in the
-    // `translatedText` field instead of an actual translation.
-    // Treat those sentinels as failures.
-    const upper = translated.toUpperCase()
-    if (
-      upper.startsWith('PLEASE SELECT') ||
-      upper.startsWith('MYMEMORY WARNING')
-    ) {
-      return text
-    }
-    return translated
-  } catch {
-    return text
-  }
-}
-
-/**
- * Translate an English description into Russian using the public
- * MyMemory API. The function is best-effort: it returns the input
- * unchanged whenever translation isn't viable so the seed never
- * blocks on a third-party hiccup.
- *
- * Skips translation when:
- *   - the input is empty or shorter than ~10 chars (likely a
- *     title fragment),
- *   - the input is over the per-call MyMemory length cap; in that
- *     case it's split on sentence boundaries `[.!?]\s+`, each
- *     resulting chunk is translated individually (under the cap),
- *     and the pieces are rejoined with a single space.
- *
- * Each chunk fetch is wrapped in its own try/catch and a 100ms
- * sleep is inserted between consecutive calls to stay under
- * MyMemory's rate limit.
- */
-async function translateToRussian(text: string): Promise<string> {
-  const input = text.trim()
-  if (input.length === 0 || input.length < TRANSLATE_MIN_LENGTH) {
-    return text
-  }
-
-  if (input.length <= TRANSLATE_CHUNK_MAX_LENGTH) {
-    return await translateChunk(input)
-  }
-
-  // Split on sentence boundaries, then re-pack into chunks no
-  // larger than TRANSLATE_CHUNK_MAX_LENGTH so we maximise the
-  // amount translated per request without ever exceeding the cap.
-  const sentences = input.split(/(?<=[.!?])\s+/)
-  const chunks: string[] = []
-  let buffer = ''
-  for (const sentence of sentences) {
-    if (sentence.length === 0) continue
-    if (sentence.length > TRANSLATE_CHUNK_MAX_LENGTH) {
-      // Single sentence longer than the cap — flush buffer, push
-      // the sentence as-is, and let `translateChunk` no-op back
-      // to the original on failure.
-      if (buffer.length > 0) {
-        chunks.push(buffer)
-        buffer = ''
-      }
-      chunks.push(sentence)
-      continue
-    }
-    const candidate = buffer.length === 0 ? sentence : `${buffer} ${sentence}`
-    if (candidate.length > TRANSLATE_CHUNK_MAX_LENGTH) {
-      chunks.push(buffer)
-      buffer = sentence
-    } else {
-      buffer = candidate
-    }
-  }
-  if (buffer.length > 0) chunks.push(buffer)
-
-  const translated: string[] = []
-  for (let i = 0; i < chunks.length; i += 1) {
-    if (i > 0) await sleep(100)
-    translated.push(await translateChunk(chunks[i]!))
-  }
-  return translated.join(' ')
-}
+const TRANSLATE_MAX_BOOKS_PER_PASS = 40
 
 /** Normalise a title for dedup purposes (case- and space-insensitive). */
 function normaliseTitle(title: string): string {
@@ -539,20 +413,12 @@ export async function seedFromOpenLibrary({
     return { inserted: 0 }
   }
 
-  // 7. Translate English descriptions to Russian. We do this
-  //    sequentially (with a 100ms sleep per fetch) to stay under
-  //    MyMemory's rate limits, and cap the total per pass at
-  //    `TRANSLATE_MAX_PER_PASS` so a giant seed can't burn
-  //    third-party quota. Failures fall back to the original
-  //    English copy.
-  const translateLimit = Math.min(records.length, TRANSLATE_MAX_PER_PASS)
+  // 7. Localize title, author, and description to Russian when they
+  //    look English. Capped per pass to stay under MyMemory limits.
+  const translateLimit = Math.min(records.length, TRANSLATE_MAX_BOOKS_PER_PASS)
   for (let i = 0; i < translateLimit; i += 1) {
     if (i > 0) await sleep(100)
-    const translated = await translateToRussian(records[i]!.description)
-    records[i]!.description =
-      translated.length > DESCRIPTION_MAX_LENGTH
-        ? translated.slice(0, DESCRIPTION_MAX_LENGTH)
-        : translated
+    await translateBookFields(records[i]!)
   }
 
   const insertResult = await admin.from('books').insert(records)

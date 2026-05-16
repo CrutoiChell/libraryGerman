@@ -38,14 +38,12 @@ export const AuthCredentialsSchema = z.object({
   email: z
     .string()
     .trim()
-    .min(1, { message: 'Email is required' })
-    .email({ message: 'Enter a valid email address' })
+    .min(1, { message: 'Укажите email' })
+    .email({ message: 'Введите корректный email' })
     .transform((value) => value.toLowerCase()),
-  password: z
-    .string()
-    .min(MIN_PASSWORD_LENGTH, {
-      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
-    }),
+  password: z.string().min(MIN_PASSWORD_LENGTH, {
+    message: `Пароль должен быть не короче ${MIN_PASSWORD_LENGTH} символов`,
+  }),
 })
 
 /** Inferred TypeScript type for parsed auth credentials. */

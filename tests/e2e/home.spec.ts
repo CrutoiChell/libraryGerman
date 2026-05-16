@@ -32,14 +32,14 @@ test.describe.skip('Home page browse, search, filter, and detail open', () => {
 
     // Hero copy + search bar
     await expect(
-      page.getByRole('heading', { level: 1, name: /Library Catalog/i }),
+      page.getByRole('heading', { level: 1, name: /каталоге библиотеки/i }),
     ).toBeVisible()
     await expect(page.getByRole('searchbox')).toBeVisible()
 
     // Genre filter row, including the "All" pseudo-button
     const genreFilter = page.getByTestId('genre-filter')
     await expect(genreFilter).toBeVisible()
-    await expect(genreFilter.getByRole('button', { name: 'All' })).toBeVisible()
+    await expect(genreFilter.getByRole('button', { name: 'Все' })).toBeVisible()
 
     // Book grid with at least one card
     const bookGrid = page.getByTestId('book-grid')

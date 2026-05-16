@@ -46,7 +46,7 @@ test.describe.skip('Admin CRUD smoke', () => {
     await page.goto('/login')
     await page.locator('#login-email').fill(adminEmail)
     await page.locator('#login-password').fill(adminPassword)
-    await page.getByRole('button', { name: /log in/i }).click()
+    await page.getByRole('button', { name: /войти/i }).click()
     await expect(page).toHaveURL('/')
 
     // 2. Visit the admin panel and start the create flow
@@ -83,7 +83,7 @@ test.describe.skip('Admin CRUD smoke', () => {
     await expect(tableRow).toBeVisible()
 
     // 3. Edit the new row's title
-    await tableRow.getByRole('link', { name: /edit/i }).click()
+    await tableRow.getByRole('link', { name: /изменить/i }).click()
     await expect(page).toHaveURL(/\/admin\/books\/[\w-]+\/edit/)
     const titleInput = page.locator('#admin-title')
     await titleInput.fill(editedTitle)
@@ -102,7 +102,7 @@ test.describe.skip('Admin CRUD smoke', () => {
     page.once('dialog', (dialog) => {
       void dialog.accept()
     })
-    await editedRow.getByRole('button', { name: /^Delete /i }).click()
+    await editedRow.getByRole('button', { name: /^Удалить$/i }).click()
 
     await expect(
       page
