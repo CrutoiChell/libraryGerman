@@ -25,9 +25,10 @@
  */
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useState, type FormEvent } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useEffect, useState, type FormEvent } from 'react'
 
+import { mapAuthError } from '@/lib/auth/errors'
 import { AuthCredentialsSchema } from '@/lib/auth/schemas'
 import { createClient } from '@/lib/supabase/browser'
 
@@ -40,11 +41,21 @@ type FieldErrors = Partial<Record<'email' | 'password' | '_form', string>>
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (searchParams.get('error') === 'auth_callback') {
+      setErrors({
+        _form:
+          'Не удалось подтвердить вход. Попробуйте снова или зарегистрируйтесь заново.',
+      })
+    }
+  }, [searchParams])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -71,9 +82,14 @@ export default function LoginPage() {
       })
 
       if (error) {
-        // Surface a generic message rather than echoing Supabase's
-        // wording so we don't leak whether an email exists.
-        setErrors({ _form: 'Неверный email или пароль' })
+        const msg = mapAuthError(error)
+        const generic =
+          /invalid login|invalid credentials|invalid email or password/i.test(
+            error.message ?? '',
+          )
+        setErrors({
+          _form: generic ? 'Неверный email или пароль' : msg,
+        })
         return
       }
 

@@ -40,7 +40,22 @@ node scripts/create-admin.mjs
 
 Скрипт `create-admin.mjs` создаёт пользователя с ролью `admin` (email/пароль задаются в скрипте или через переменные окружения — см. файл).
 
-### 4. Запуск
+### 4. Настройка Auth в Supabase (важно для регистрации)
+
+В [Supabase Dashboard](https://supabase.com/dashboard) → **Authentication** → **URL Configuration**:
+
+| Поле | Значение (локально) |
+|------|---------------------|
+| **Site URL** | `http://localhost:3000` |
+| **Redirect URLs** | `http://localhost:3000/auth/callback` |
+
+Для production добавьте `https://ваш-домен/auth/callback` и задайте `NEXT_PUBLIC_SITE_URL` в env.
+
+**Если регистрация даёт 400/ошибку redirect:** проверьте Redirect URLs (см. выше).
+
+**Для диплома проще:** **Authentication** → **Providers** → **Email** → отключите **Confirm email** — тогда вход сразу после регистрации, без письма.
+
+### 5. Запуск
 
 ```bash
 npm run dev

@@ -44,6 +44,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, type FormEvent } from 'react'
 
+import { mapAuthError } from '@/lib/auth/errors'
+import { getEmailRedirectUrl } from '@/lib/auth/redirect'
 import { AuthCredentialsSchema } from '@/lib/auth/schemas'
 import { createClient } from '@/lib/supabase/browser'
 
@@ -90,21 +92,13 @@ export default function SignupPage() {
       const { data, error } = await supabase.auth.signUp({
         email: parsed.data.email,
         password: parsed.data.password,
+        options: {
+          emailRedirectTo: getEmailRedirectUrl('/'),
+        },
       })
 
       if (error) {
-        // Supabase exposes a `User already registered` error when
-        // confirmations are required. Map it to the form-level
-        // duplicate-email message; surface other errors as a
-        // generic message so we don't leak provider details.
-        const isDuplicate =
-          /already\s+registered/i.test(error.message) ||
-          /already.*exists/i.test(error.message)
-        setErrors({
-          _form: isDuplicate
-            ? 'Аккаунт с таким email уже существует.'
-            : 'Не удалось создать аккаунт. Попробуйте ещё раз.',
-        })
+        setErrors({ _form: mapAuthError(error) })
         return
       }
 
